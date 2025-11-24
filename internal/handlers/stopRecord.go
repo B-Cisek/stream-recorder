@@ -37,6 +37,11 @@ func (h *StopRecordHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.service.StopRecording(req.Channel); err != nil {
+		http.Error(w, "Failed to stop recording: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 

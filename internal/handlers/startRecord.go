@@ -18,7 +18,8 @@ func NewStartRecordHandler(service services.RecorderService) *StartRecordHandler
 }
 
 type StartRecordRequest struct {
-	Channel string `json:"channel"`
+	Channel  string `json:"channel"`
+	Platform string `json:"platform"`
 }
 
 type StartRecordResponse struct {
