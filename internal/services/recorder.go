@@ -5,14 +5,12 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sync"
-	"time"
 )
 
 type RecorderService interface {
-	StartRecording(channel string) error
-	StopRecording(channel string) error
+	StartRecording(platform, channel string) error
+	StopRecording(platform, channel string) error
 }
 
 type recorderService struct {
@@ -26,38 +24,40 @@ func NewRecorderService() RecorderService {
 	}
 }
 
-func (s *recorderService) StartRecording(channel string) error {
+func (s *recorderService) StartRecording(platform, channel string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, exists := s.activeRecordings[channel]; exists {
-		return fmt.Errorf("recording already in progress for channel: %s", channel)
+	key := fmt.Sprintf("%s-%s", platform, channel)
+
+	if _, exists := s.activeRecordings[key]; exists {
+		return fmt.Errorf("recording already in progress for %s channel: %s", platform, channel)
+	}
+
+	strategy, err := GetPlatformStrategy(platform)
+	if err != nil {
+		return err
 	}
 
 	// Ensure recordings directory exists
-	recordingsDir := "./recordings"
-	if err := os.MkdirAll(recordingsDir, 0755); err != nil {
+	recordingDir := "./recordings"
+	if err := os.MkdirAll(recordingDir, 0755); err != nil {
 		return fmt.Errorf("failed to create recordings directory: %w", err)
 	}
 
-	timestamp := time.Now().Format("2006-01-02_15-04-05")
-	filename := fmt.Sprintf("%s-%s.mp4", channel, timestamp)
-	filePath := filepath.Join(recordingsDir, filename)
-
-	// Construct streamlink command
-	// streamlink twitch.tv/<channel> best -o <filepath>
-	cmd := exec.Command("streamlink", "twitch.tv/"+channel, "best", "-o", filePath)
+	args := strategy.GetStreamlinkArgs(channel, recordingDir)
+	cmd := exec.Command("streamlink", args...)
 
 	// Optional: set stdout/stderr to log or a file for debugging
 	// cmd.Stdout = os.Stdout
 	// cmd.Stderr = os.Stderr
 
-	log.Printf("Starting recording for channel: %s, output: %s", channel, filePath)
+	log.Printf("Starting recording for %s channel: %s, output: %s", strategy.GetStrategyName(), channel, args)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start streamlink: %w", err)
 	}
 
-	s.activeRecordings[channel] = cmd
+	s.activeRecordings[key] = cmd
 
 	// Monitor process in a goroutine
 	go func() {
@@ -65,13 +65,12 @@ func (s *recorderService) StartRecording(channel string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		// Check if it was still in the map (might have been stopped manually)
-		if _, exists := s.activeRecordings[channel]; exists {
-			delete(s.activeRecordings, channel)
+		if _, exists := s.activeRecordings[key]; exists {
+			delete(s.activeRecordings, key)
 			if err != nil {
-				log.Printf("Recording for channel %s finished with error: %v", channel, err)
+				log.Printf("Recording for %s channel %s finished with error: %v", strategy.GetStrategyName(), channel, err)
 			} else {
-				log.Printf("Recording for channel %s finished successfully", channel)
+				log.Printf("Recording for %s channel %s finished successfully", strategy.GetStrategyName(), channel)
 			}
 		}
 	}()
@@ -79,16 +78,18 @@ func (s *recorderService) StartRecording(channel string) error {
 	return nil
 }
 
-func (s *recorderService) StopRecording(channel string) error {
+func (s *recorderService) StopRecording(platform, channel string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	cmd, exists := s.activeRecordings[channel]
+	key := fmt.Sprintf("%s-%s", platform, channel)
+
+	cmd, exists := s.activeRecordings[key]
 	if !exists {
-		return fmt.Errorf("no active recording found for channel: %s", channel)
+		return fmt.Errorf("no active recording found for %s channel: %s", platform, channel)
 	}
 
-	log.Printf("Stopping recording for channel: %s", channel)
+	log.Printf("Stopping recording for %s channel: %s", platform, channel)
 
 	// Send interrupt signal to gracefully stop streamlink
 	if err := cmd.Process.Signal(os.Interrupt); err != nil {
@@ -102,7 +103,7 @@ func (s *recorderService) StopRecording(channel string) error {
 	// We remove it from the map here to prevent further operations,
 	// but the goroutine will also try to remove it.
 	// The goroutine checks existence, so it's safe.
-	delete(s.activeRecordings, channel)
+	delete(s.activeRecordings, key)
 
 	return nil
 }

@@ -38,8 +38,8 @@ func (h *StartRecordHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.StartRecording(req.Channel); err != nil {
-		http.Error(w, "Failed to start recording", http.StatusInternalServerError)
+	if err := h.service.StartRecording(req.Platform, req.Channel); err != nil {
+		http.Error(w, "Failed to start recording: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 

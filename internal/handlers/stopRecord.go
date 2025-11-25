@@ -18,7 +18,8 @@ func NewStopRecordHandler(service services.RecorderService) *StopRecordHandler {
 }
 
 type StopRecordRequest struct {
-	Channel string `json:"channel"`
+	Channel  string `json:"channel"`
+	Platform string `json:"platform"`
 }
 
 type StopRecordResponse struct {
@@ -37,7 +38,7 @@ func (h *StopRecordHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.StopRecording(req.Channel); err != nil {
+	if err := h.service.StopRecording(req.Platform, req.Channel); err != nil {
 		http.Error(w, "Failed to stop recording: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
